@@ -1,0 +1,43 @@
+## Visual Studio & Build Artifacts
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+
+## Binary Releases & Archives
+[Dd]ist/
+*.dll
+*.pdb
+*.zip
+
+## Temporary & Log Files
+*.log
+*.tmp
+*.bak
+*.swp
+
+## Agent Skills & AI Workspace Meta
+.agents/
+.gemini/
+.claude/
+.idea/
+
+## Internal Documentation & Markdown Files
+Docs/
+docs/
+*.md
+!README.md
+!LICENSE
+
+## Reference Media
+*.mp4
+*.avi
+*.mkv
+*.png
+*.jpg
+*.jpeg
