@@ -1,0 +1,55 @@
+## Visual Studio & Build Artifacts
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+
+## Binary Releases & Archives
+[Dd]ist/
+*.dll
+*.exe
+*.pdb
+*.mdb
+*.zip
+*.7z
+*.rar
+
+## Temporary & Log Files
+*.log
+*.tmp
+*.bak
+*.swp
+.temp/
+__pycache__/
+*.pyc
+Thumbs.db
+.DS_Store
+
+## Agent Skills & AI Workspace Meta
+.agents/
+.gemini/
+.claude/
+CLAUDE.md
+.idea/
+
+## Internal Documentation & Markdown Files
+Docs/
+docs/
+*.md
+!README.md
+
+## Reference Media
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.gif
+*.png
+*.jpg
+*.jpeg
