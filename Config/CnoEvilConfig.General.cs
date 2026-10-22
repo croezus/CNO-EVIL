@@ -1,0 +1,67 @@
+using BepInEx.Configuration;
+using UnityEngine;
+
+namespace CnoEvil.Config
+{
+    public static partial class CnoEvilConfig
+    {
+        // 01. General
+        public static ConfigEntry<bool> ModEnabled;
+        public static ConfigEntry<KeyCode> ToggleModKey;
+        public static ConfigEntry<bool> DebugLogging;
+        public static ConfigEntry<bool> LogPerfStats;
+
+        // 02. Debug Overlays
+        public static ConfigEntry<bool> ShowDebugHUD;
+        public static ConfigEntry<KeyCode> ToggleHUDKey;
+        public static ConfigEntry<bool> DrawDebugGizmos;
+        public static ConfigEntry<KeyCode> ToggleGizmosKey;
+        public static ConfigEntry<bool> DrawDatalinkVisualizer;
+        public static ConfigEntry<KeyCode> ToggleDatalinkVisualizerKey;
+        public static ConfigEntry<bool> ShowDatalinkDiagnosticPanel;
+        public static ConfigEntry<bool> ShowDatalinkMeshLines;
+
+        private const string SectionGeneral = "01. General";
+        private const string SectionDebug = "02. Debug Overlays";
+
+        private static void BindGeneral(ConfigFile c)
+        {
+            ModEnabled = Bind(c, SectionGeneral, "ModEnabled", true,
+                "Master switch. TRUE: CNO-EVIL radar physics, RWR, tracking and doctrine run. FALSE: the vanilla game code runs. " +
+                "In multiplayer the mod runs only when the host also runs it.");
+            ToggleModKey = Bind(c, SectionGeneral, "ToggleModKey", KeyCode.F10,
+                "Hotkey that flips ModEnabled in game (A/B comparison with vanilla). The new value is saved to this file. " +
+                "On a multiplayer client it switches only this computer.");
+            DebugLogging = Bind(c, SectionGeneral, "DebugLogging", false,
+                "Extra lines in the BepInEx log: the radar model of each emitter, the munition profiles, passive bearing fixes, " +
+                "RCS database values and lost missile memory coasts.");
+            LogPerfStats = Bind(c, SectionGeneral, "LogPerfStats", false,
+                "Every 10 s, write to the BepInEx log the CPU time (ms per second) and calls per second of RadarCheck, the SARH seeker, " +
+                "the datalink cycle, the track update and the host / client network code, and the mod network traffic " +
+                "(bytes and packets per second). Use it to measure the load of a host.");
+        }
+
+        private static void BindDebugOverlays(ConfigFile c)
+        {
+            ShowDebugHUD = Bind(c, SectionDebug, "ShowDebugHUD", false,
+                "Radar telemetry panel (distance, echo power, SNR, RCS, notch, jamming, burn-through).");
+            ToggleHUDKey = Bind(c, SectionDebug, "ToggleHUDKey", KeyCode.F9,
+                "Hotkey for the telemetry panel. The new value is saved to this file.");
+            DrawDebugGizmos = Bind(c, SectionDebug, "DrawDebugGizmos", false,
+                "Radar line-of-sight rays and Doppler vectors in the world: green clear, yellow clutter-degraded, red notched or " +
+                "below the radar horizon. Targets behind terrain get no ray.");
+            ToggleGizmosKey = Bind(c, SectionDebug, "ToggleGizmosKey", KeyCode.F11,
+                "Hotkey for the radar debug rays. The new value is saved to this file.");
+            DrawDatalinkVisualizer = Bind(c, SectionDebug, "DrawDatalinkVisualizer", false,
+                "3D datalink overlay: network nodes, shared radar / visual tracks, relayed missile alerts. Empty on a multiplayer client " +
+                "(the host runs the network).");
+            ToggleDatalinkVisualizerKey = Bind(c, SectionDebug, "ToggleDatalinkVisualizerKey", KeyCode.F8,
+                "Hotkey for the datalink overlay. The new value is saved to this file.");
+            ShowDatalinkDiagnosticPanel = Bind(c, SectionDebug, "ShowDatalinkDiagnosticPanel", true,
+                "Datalink telemetry panel while the datalink overlay is on.");
+            ShowDatalinkMeshLines = Bind(c, SectionDebug, "ShowDatalinkMeshLines", true,
+                "Lines in the datalink overlay from the network hub (AWACS, else a warship, else your aircraft) to each friendly node " +
+                "closer than 80 km.");
+        }
+    }
+}
