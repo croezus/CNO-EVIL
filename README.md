@@ -49,4 +49,4 @@ The build copies `CNOEVIL.dll` to `BepInEx\plugins\CNO-EVIL` in the game folder.
 
 If you enjoy this modification, you can support my work here: https://www.patreon.com/croezus
 
-All contributions ~~will go to the European Alliance Organization~~ and be reinvested in development tools to help create new modifications.
+All contributions will ~~go to the European Alliance Organization~~ be reinvested in development tools to help create new modifications.
