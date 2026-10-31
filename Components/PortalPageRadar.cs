@@ -1,0 +1,430 @@
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+using CnoEvil.Config;
+using CnoEvil.Core;
+
+namespace CnoEvil.Components
+{
+    /// <summary>
+    /// RADAR page: B-scope (azimuth across, range up) like the reference radar page. Contacts are what the ownship
+    /// sensors hold: radar (and optical) detections at their live position, allied datalink reports dead-reckoned
+    /// from the last report. Hostile symbol: orange triangle with a stem along the target track; friendly: blue ring.
+    /// Numbers next to a symbol: altitude in thousands (ft for 'Aviation', km for 'Metric'). The selected target gets
+    /// a lock line and the lock box (bearing, range, altitude, closure). Like the reference page, the scan line becomes
+    /// a solid line on the azimuth of the selected target, and jamming of the ownship (Unit.onJam) puts short strobes
+    /// at random ranges on the jammer azimuth, 4 tries per tick weighted by the jam amount, each shown for 1 s.
+    /// </summary>
+    public class PortalPageRadar : PortalPage
+    {
+        private const int MaxStrobes = 32;
+        private const int StrobeTries = 4;
+        private const float StrobeLife = 1f;
+        private const float JamHold = 0.5f;
+        private static readonly Color ScanColor = new Color(0.25f, 0.57f, 0f, 0.15f);
+        private static readonly Color HardLockColor = new Color(0.04f, 0.48f, 0f, 1f);
+        private static readonly Color StrobeColor = new Color(0.55f, 1f, 0.3f, 0.9f);
+        private static readonly Color LimitColor = new Color(0.31f, 0.54f, 0f, 1f);
+        private static readonly Color OutsideScanColor = new Color(0f, 0f, 0f, 0.45f);
+
+        private float ScopeW = 250f;
+        private float ScopeH = 230f;
+        private const float HalfAzimuth = 60f;
+        private const int MaxContacts = 40;
+        private const float Persistence = 3.5f;
+
+        private static readonly float[] s_ranges = { 10f, 20f, 40f, 80f };
+        private static readonly Color GridColor = new Color(0.38f, 0.56f, 0f, 0.25f);
+
+        private class Contact
+        {
+            public Unit Unit;
+            public float LastSeen;
+            public float LastOwnSensor = -1000f;
+            public Vector3 SensorPos;
+            public Vector3 SensorVel;
+            public DatalinkThreatEntry Report;
+        }
+
+        private class Symbol
+        {
+            public RectTransform Root;
+            public Image Icon;
+            public TextMeshProUGUI Alt;
+        }
+
+        private RectTransform _scope;
+        private RectTransform _scan;
+        private Image _lockLine;
+        private GameObject _lockBox;
+        private TextMeshProUGUI _lockValues;
+        private TextMeshProUGUI _lockName;
+        private TextMeshProUGUI _far;
+        private TextMeshProUGUI _half;
+        private TextMeshProUGUI _status;
+        private float _rangeKm = 40f;
+        private bool _rangeInitialized;
+        private bool _scanning;
+        private bool _scanLocked;
+        private float _scanLockX;
+        private readonly Dictionary<Unit, Contact> _contacts = new Dictionary<Unit, Contact>();
+        private readonly List<Unit> _stale = new List<Unit>();
+        private readonly List<Symbol> _symbols = new List<Symbol>();
+        private TargetDetector _optical;
+        private Image _scanImage;
+        private readonly JamTracker _jams = new JamTracker("PortalPageRadar.OnJam", false);
+        private readonly Image[] _strobes = new Image[MaxStrobes];
+        private readonly float[] _strobeUntil = new float[MaxStrobes];
+        private int _nextStrobe;
+        private Image _dimLeft;
+        private Image _dimRight;
+        private Image _limitLeft;
+        private Image _limitRight;
+        // Scan sector of the own radar in scope units (x), clamped to the scope
+        private float _sectorLeft = -1f;
+        private float _sectorRight = 1f;
+
+        protected override void Build()
+        {
+            Background(Color.black);
+            ScopeW = W - 90f;
+            ScopeH = H - 66f;
+            _scope = PortalMFDGraphics.At("Scope", Root, Mid, new Vector2(4f, 6f), new Vector2(ScopeW, ScopeH));
+            PortalMFDGraphics.AddImage(PortalMFDGraphics.Stretch("Border", _scope, 0f), new Color(0.31f, 0.54f, 0f, 1f), PortalShape.Frame);
+
+            for (int i = 1; i <= 3; i++)
+            {
+                float fx = (i / 4f - 0.5f) * ScopeW;
+                float fy = (i / 4f - 0.5f) * ScopeH;
+                PortalMFDGraphics.Line("GridV", _scope, new Vector2(fx, -ScopeH * 0.5f), new Vector2(fx, ScopeH * 0.5f), 0.75f, GridColor);
+                PortalMFDGraphics.Line("GridH", _scope, new Vector2(-ScopeW * 0.5f, fy), new Vector2(ScopeW * 0.5f, fy), 0.75f, GridColor);
+            }
+
+            // Scan limits of the own radar: dim bands outside them and a line on each limit
+            _dimLeft = PortalMFDGraphics.Box("DimLeft", _scope, Mid, Vector2.zero, Vector2.zero, OutsideScanColor);
+            _dimRight = PortalMFDGraphics.Box("DimRight", _scope, Mid, Vector2.zero, Vector2.zero, OutsideScanColor);
+            _limitLeft = PortalMFDGraphics.Line("LimitLeft", _scope, new Vector2(0f, -ScopeH * 0.5f), new Vector2(0f, ScopeH * 0.5f), 1f, LimitColor);
+            _limitRight = PortalMFDGraphics.Line("LimitRight", _scope, new Vector2(0f, -ScopeH * 0.5f), new Vector2(0f, ScopeH * 0.5f), 1f, LimitColor);
+            ShowLimits(false, false);
+
+            _scanImage = PortalMFDGraphics.Line("Scan", _scope, new Vector2(0f, -ScopeH * 0.5f), new Vector2(0f, ScopeH * 0.5f), 2f, ScanColor);
+            _scan = _scanImage.rectTransform;
+            for (int i = 0; i < MaxStrobes; i++)
+            {
+                _strobes[i] = PortalMFDGraphics.Box("Strobe", _scope, Mid, Vector2.zero, new Vector2(2f, 5f), StrobeColor);
+                _strobes[i].gameObject.SetActive(false);
+            }
+            _lockLine = PortalMFDGraphics.Line("Lock", _scope, Vector2.zero, Vector2.up, 1f, new Color(0.04f, 0.48f, 0f, 1f));
+
+            _far = Label(Root, new Vector2(-ScopeW * 0.5f - 12f, ScopeH * 0.5f + 0f), new Vector2(30f, 10f), string.Empty, 8f, PortalMFDGraphics.DimGreen, TextAlignmentOptions.Right);
+            _half = Label(Root, new Vector2(-ScopeW * 0.5f - 12f, 6f), new Vector2(30f, 10f), string.Empty, 8f, PortalMFDGraphics.DimGreen, TextAlignmentOptions.Right);
+            _status = Label(Root, new Vector2(4f, 40f), new Vector2(160f, 14f), string.Empty, 11.5f, PortalMFDGraphics.Amber, TextAlignmentOptions.Center);
+
+            // Lock box, bottom left (reference LockInfoObj)
+            Image box = PortalMFDGraphics.Box("LockInfo", Root, Mid, new Vector2(-W * 0.5f + 46f, -H * 0.5f + 34f), new Vector2(84f, 60f), new Color(0f, 0f, 0f, 0.7f));
+            PortalMFDGraphics.Box("Bar", box.transform, Mid, new Vector2(-40f, 0f), new Vector2(2f, 56f), new Color(0.05f, 0.35f, 0f, 1f));
+            Label(box.transform, new Vector2(-24f, -2f), new Vector2(26f, 56f), "LOCK\nB\nR\nA\nVc", 7.5f, new Color(0.46f, 0.78f, 0.5f, 1f), TextAlignmentOptions.TopLeft);
+            _lockName = Label(box.transform, new Vector2(12f, 23f), new Vector2(56f, 10f), string.Empty, 7.5f, new Color(0.97f, 1f, 0.66f, 1f), TextAlignmentOptions.Left);
+            _lockValues = Label(box.transform, new Vector2(12f, -7f), new Vector2(56f, 46f), string.Empty, 7.5f, Color.white, TextAlignmentOptions.TopLeft);
+            _lockBox = box.gameObject;
+
+            // Range buttons (reference RangePlus / RangeMinus, bottom right); radar power shows as the status text
+            Button(new Vector2(W * 0.5f - 14f, -H * 0.5f + 40f), new Vector2(20f, 18f), "+");
+            Button(new Vector2(W * 0.5f - 14f, -H * 0.5f + 18f), new Vector2(20f, 18f), "-");
+        }
+
+        public override void OnShow()
+        {
+            Aircraft own = Aircraft;
+            if (own == null) return;
+            _jams.Attach(own);
+            if (own.radar == null && _optical == null) _optical = own.GetComponentInChildren<TargetDetector>();
+            if (own.radar != null && !_rangeInitialized)
+            {
+                _rangeInitialized = true;
+                float maxKm = own.radar.GetRadarRange() * 0.001f;
+                _rangeKm = s_ranges[s_ranges.Length - 1];
+                for (int i = 0; i < s_ranges.Length; i++)
+                {
+                    if (s_ranges[i] >= maxKm * 0.75f) { _rangeKm = s_ranges[i]; break; }
+                }
+            }
+            UpdateRangeTexts();
+        }
+
+        public override void CycleRange()
+        {
+            SetRange(s_ranges[(NearestRange(s_ranges, _rangeKm) + 1) % s_ranges.Length]);
+        }
+
+        private void SetRange(float km)
+        {
+            _rangeKm = km;
+            UpdateRangeTexts();
+            Tick(Time.time);
+        }
+
+        private void UpdateRangeTexts()
+        {
+            SetText(_far, _rangeKm.ToString("0"));
+            SetText(_half, (_rangeKm * 0.5f).ToString("0"));
+        }
+
+        private Symbol GetSymbol(int index)
+        {
+            while (_symbols.Count <= index)
+            {
+                Symbol s = new Symbol();
+                s.Root = PortalMFDGraphics.At("Contact", _scope, Mid, Vector2.zero, new Vector2(1f, 1f));
+                s.Icon = PortalMFDGraphics.Shape("Icon", s.Root, Mid, Vector2.zero, 11f, PortalShape.RadarEnemy, PortalMFDGraphics.Hostile);
+                s.Alt = Label(s.Root, new Vector2(0f, -11f), new Vector2(24f, 9f), string.Empty, 7.5f, new Color(0.95f, 0.37f, 0f, 1f), TextAlignmentOptions.Center);
+                s.Root.gameObject.SetActive(false);
+                _symbols.Add(s);
+            }
+            Symbol sym = _symbols[index];
+            Show(sym.Root, true);
+            return sym;
+        }
+
+        public override void Tick(float now)
+        {
+            Aircraft own = Aircraft;
+            if (own == null) return;
+            TargetDetector radar = own.radar;
+            bool radarOn = radar != null && radar.activated;
+            SetText(_status, radar == null ? (_optical != null ? "OPTICAL" : "NO RADAR") : string.Empty);
+            bool scanning = radarOn || (radar == null && _optical != null);
+            _scanning = scanning;
+            Show(_scan, scanning);
+
+            Gather(own, radar, now);
+            TickStrobes(own, radarOn, now);
+
+            Unit primary = PrimaryTarget();
+            Vector3 ownPos = own.transform.position;
+            Vector3 ownVel = own.rb != null ? own.rb.velocity : own.transform.forward * own.speed;
+            float heading = HeadingDeg(own.transform);
+            TickLimits(radar, heading);
+            bool aviation = PlayerSettings.unitSystem == PlayerSettings.UnitSystem.Imperial;
+            float rangeM = _rangeKm * 1000f;
+            bool lockShown = false;
+            int n = 0;
+
+            foreach (KeyValuePair<Unit, Contact> kv in _contacts)
+            {
+                if (n >= MaxContacts) break;
+                Contact c = kv.Value;
+                Vector3 pos, vel;
+                KnownState(c, now, out pos, out vel);
+                Vector3 d = pos - ownPos;
+                float range = new Vector2(d.x, d.z).magnitude;
+                float az = Mathf.DeltaAngle(heading, Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg);
+                if (Mathf.Abs(az) > HalfAzimuth || range > rangeM) continue;
+
+                Vector2 p = new Vector2(az / HalfAzimuth * ScopeW * 0.5f, range / rangeM * ScopeH - ScopeH * 0.5f);
+                Symbol s = GetSymbol(n++);
+                s.Root.anchoredPosition = p;
+                bool friend = own.NetworkHQ != null && c.Unit.NetworkHQ == own.NetworkHQ;
+                Sprite sprite = PortalMFDGraphics.Get(friend ? PortalShape.RadarFriendly : PortalShape.RadarEnemy);
+                if (s.Icon.sprite != sprite) s.Icon.sprite = sprite;
+                Color col = friend ? PortalMFDGraphics.Friendly : PortalMFDGraphics.Hostile;
+                col.a = Mathf.Lerp(0.35f, 1f, 1f - (now - c.LastSeen) / Persistence);
+                s.Icon.color = col;
+                float track = Mathf.Atan2(vel.x, vel.z) * Mathf.Rad2Deg - heading;
+                s.Icon.rectTransform.localEulerAngles = new Vector3(0f, 0f, -track);
+
+                float alt = pos.y - Datum.LocalSeaY;
+                int altK = Mathf.RoundToInt(aviation ? alt * 3.28084f / 1000f : alt / 1000f);
+                SetText(s.Alt, altK.ToString());
+                s.Alt.color = col;
+
+                if (c.Unit == primary)
+                {
+                    lockShown = true;
+                    PortalMFDGraphics.SetLine(_lockLine.rectTransform, new Vector2(0f, -ScopeH * 0.5f), p, 1f);
+                    // The scan line holds on the target azimuth (reference hardlockLine)
+                    _scanLockX = p.x;
+                    float closure = Vector3.Dot(ownVel - vel, d.normalized);
+                    SetText(_lockName, friend ? "FRIEND" : TargetIdentification.GetLabel(c.Unit, IdentTier.High));
+                    SetText(_lockValues, string.Format("{0:000}\n{1:0.0}\n{2}\n{3:+0;-0}",
+                        Mathf.Repeat(heading + az, 360f), range * 0.001f, altK, closure));
+                }
+            }
+            for (int i = n; i < _symbols.Count; i++) Show(_symbols[i].Root, false);
+            _scanLocked = lockShown;
+            Show(_lockLine, lockShown);
+            Show(_lockBox.transform, lockShown);
+        }
+
+        /// <summary>Every frame: the scan line sweeps, or holds on the azimuth of the selected target.</summary>
+        public override void FrameTick()
+        {
+            if (!_scanning) return;
+            // The sweep stays inside the scan limits of the radar
+            float center = (_sectorLeft + _sectorRight) * 0.5f;
+            float halfWidth = (_sectorRight - _sectorLeft) * 0.5f;
+            float x = _scanLocked ? _scanLockX : (center + Mathf.Sin(Time.timeSinceLevelLoad * 0.5f * Mathf.PI) * halfWidth);
+            _scan.anchoredPosition = new Vector2(x, -ScopeH * 0.5f);
+            _scanImage.color = _scanLocked ? HardLockColor : ScanColor;
+        }
+
+        /// <summary>
+        /// Scan limits of the own radar (vanilla radarCone, a half-angle around the scanner axis) on the +-60 deg
+        /// scope. A radar without a limit (radome) or the optical sensor uses the full scope width.
+        /// </summary>
+        private void TickLimits(TargetDetector radar, float heading)
+        {
+            float left = -HalfAzimuth;
+            float right = HalfAzimuth;
+            if (radar != null)
+            {
+                float half = RadarPhysics.ScanHalfAngleDeg(radar);
+                if (half < 180f)
+                {
+                    float bore = RadarPhysics.ScanBoresightDeg(radar, heading);
+                    left = Mathf.Clamp(bore - half, -HalfAzimuth, HalfAzimuth);
+                    right = Mathf.Clamp(bore + half, -HalfAzimuth, HalfAzimuth);
+                }
+            }
+            float w = ScopeW * 0.5f;
+            _sectorLeft = left / HalfAzimuth * w;
+            _sectorRight = right / HalfAzimuth * w;
+
+            bool showLeft = left > -HalfAzimuth + 0.5f;
+            bool showRight = right < HalfAzimuth - 0.5f;
+            ShowLimits(showLeft, showRight);
+            if (showLeft)
+            {
+                _limitLeft.rectTransform.anchoredPosition = new Vector2(_sectorLeft, _limitLeft.rectTransform.anchoredPosition.y);
+                _dimLeft.rectTransform.anchoredPosition = new Vector2((_sectorLeft - w) * 0.5f, 0f);
+                _dimLeft.rectTransform.sizeDelta = new Vector2(_sectorLeft + w, ScopeH);
+            }
+            if (showRight)
+            {
+                _limitRight.rectTransform.anchoredPosition = new Vector2(_sectorRight, _limitRight.rectTransform.anchoredPosition.y);
+                _dimRight.rectTransform.anchoredPosition = new Vector2((_sectorRight + w) * 0.5f, 0f);
+                _dimRight.rectTransform.sizeDelta = new Vector2(w - _sectorRight, ScopeH);
+            }
+        }
+
+        private void ShowLimits(bool left, bool right)
+        {
+            Show(_dimLeft, left);
+            Show(_limitLeft, left);
+            Show(_dimRight, right);
+            Show(_limitRight, right);
+        }
+
+        private void Gather(Aircraft own, TargetDetector radar, float now)
+        {
+            if (radar != null && radar.detectedTargets != null) Paint(radar.detectedTargets, own, now);
+            if (_optical != null && _optical.detectedTargets != null) Paint(_optical.detectedTargets, own, now);
+
+            PhysRWRReceiver rwr = PhysRWRReceiver.Get(own);
+            if (rwr != null)
+            {
+                foreach (DatalinkThreatEntry d in rwr.ActiveDatalinkThreats)
+                {
+                    if (d == null || d.IsMissile || d.ThreatUnit == null || d.ThreatUnit.disabled) continue;
+                    if (!(d.ThreatUnit is Aircraft)) continue;
+                    Contact c = GetContact(d.ThreatUnit, now);
+                    c.Report = d;
+                }
+            }
+
+            _stale.Clear();
+            foreach (KeyValuePair<Unit, Contact> kv in _contacts)
+            {
+                if (kv.Key == null || kv.Key.disabled || now - kv.Value.LastSeen > Persistence) _stale.Add(kv.Key);
+            }
+            for (int i = 0; i < _stale.Count; i++) _contacts.Remove(_stale[i]);
+        }
+
+        private void Paint(List<Unit> units, Aircraft own, float now)
+        {
+            for (int i = 0; i < units.Count; i++)
+            {
+                Unit u = units[i];
+                if (u == null || u == own || u.disabled || !(u is Aircraft)) continue;
+                Contact c = GetContact(u, now);
+                c.LastOwnSensor = now;
+                c.SensorPos = u.transform.position;
+                c.SensorVel = (u.rb != null && u.rb.velocity.sqrMagnitude > 1f) ? u.rb.velocity : u.transform.forward * u.speed;
+            }
+        }
+
+        private Contact GetContact(Unit u, float now)
+        {
+            Contact c;
+            if (!_contacts.TryGetValue(u, out c))
+            {
+                c = new Contact();
+                c.Unit = u;
+                _contacts[u] = c;
+            }
+            c.LastSeen = now;
+            return c;
+        }
+
+        #region Jamming strobes
+
+        public override void Dispose()
+        {
+            _jams.Detach();
+        }
+
+        /// <summary>
+        /// Jammers in the scan sector put strobes on their azimuth while the radar transmits.
+        /// </summary>
+        private void TickStrobes(Aircraft own, bool radarOn, float now)
+        {
+            _jams.Prune(now, JamHold);
+
+            if (radarOn)
+            {
+                Vector3 ownPos = own.transform.position;
+                float heading = HeadingDeg(own.transform);
+                for (int i = 0; i < _jams.Sources.Count; i++)
+                {
+                    JamTracker.Source j = _jams.Sources[i];
+                    Vector3 d = j.Jammer.transform.position - ownPos;
+                    float az = Mathf.DeltaAngle(heading, Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg);
+                    if (Mathf.Abs(az) > HalfAzimuth) continue;
+                    float x = az / HalfAzimuth * ScopeW * 0.5f;
+                    // jamAmount is the pod falloff times its power fraction (0..1)
+                    float chance = Mathf.Lerp(0.25f, 1f, Mathf.Clamp01(j.Amount));
+                    for (int k = 0; k < StrobeTries; k++)
+                    {
+                        if (Random.value > chance) continue;
+                        int s = _nextStrobe;
+                        _nextStrobe = (_nextStrobe + 1) % MaxStrobes;
+                        _strobes[s].rectTransform.anchoredPosition = new Vector2(x + Random.Range(-1.5f, 1.5f), Random.Range(-0.5f, 0.5f) * ScopeH);
+                        _strobeUntil[s] = now + StrobeLife;
+                    }
+                }
+            }
+
+            for (int i = 0; i < MaxStrobes; i++) Show(_strobes[i], radarOn && now < _strobeUntil[i]);
+        }
+
+        #endregion
+
+        /// <summary>
+        /// Own sensor contact: the position of the last detection. Without one in the last 0.5 s: the datalink
+        /// report, else the last detection, both dead-reckoned to now.
+        /// </summary>
+        private static void KnownState(Contact c, float now, out Vector3 position, out Vector3 velocity)
+        {
+            bool ownRecent = now - c.LastOwnSensor <= 0.5f;
+            if (!ownRecent && c.Report != null && c.Report.ThreatUnit == c.Unit)
+            {
+                velocity = c.Report.EstimatedVelocity;
+                position = c.Report.EstimatedPosition + velocity * Mathf.Max(0f, Time.time - c.Report.LastPingTime);
+                return;
+            }
+            velocity = c.SensorVel;
+            position = c.SensorPos + (ownRecent ? Vector3.zero : velocity * Mathf.Max(0f, now - c.LastOwnSensor));
+        }
+    }
+}
