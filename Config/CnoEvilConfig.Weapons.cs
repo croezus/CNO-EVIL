@@ -47,6 +47,7 @@ namespace CnoEvil.Config
         public static ConfigEntry<float> BasicDatalinkRelayInterval_s;
         public static ConfigEntry<float> MissilePictureCoast_s;
         public static ConfigEntry<float> MissileWarningHold_s;
+        public static ConfigEntry<float> MissileWarningRelease_s;
         public static ConfigEntry<float> MissileWarningDatalinkTimeToGo_s;
         public static ConfigEntry<float> MissileWarningDatalinkRange_m;
         public static ConfigEntry<float> MissileWarningDatalinkIRRange_m;
@@ -215,7 +216,9 @@ namespace CnoEvil.Config
             MissileWarningHold_s = Bind(c, SectionDatalink, "MissileWarningHold_s", 1.0f,
                 "Seconds a known hostile missile must stay on a collision course with an aircraft before its missile warning starts " +
                 "(alarm, threat list, AI evasion). An RWR contact on the missile seeker, or on the illuminator of a SARH missile that " +
-                "homes on the aircraft, starts the warning at once. The warning stops 2 s after the missile leaves the collision course.");
+                "homes on the aircraft, starts the warning at once. The warning stops MissileWarningRelease_s s after the missile leaves the collision course.");
+            MissileWarningRelease_s = Bind(c, SectionDatalink, "MissileWarningRelease_s", 1.0f,
+                "Seconds a known hostile missile must stay off a collision course with an aircraft before its missile warning stops.");
             MissileWarningDatalinkTimeToGo_s = Bind(c, SectionDatalink, "MissileWarningDatalinkTimeToGo_s", 20.0f,
                 "A missile without an own RWR or MAWS contact (known over the datalink or by the own radar) starts the missile warning only " +
                 "when its time to the closest approach is this or less (s). Also, the missile must have terrain line of sight to the " +
