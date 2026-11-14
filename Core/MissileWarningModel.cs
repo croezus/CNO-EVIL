@@ -19,7 +19,7 @@ namespace CnoEvil.Core
     ///   MissileWarningDatalinkTimeToGo_s, a distance of at most MissileWarningDatalinkRange_m (IR missiles:
     ///   MissileWarningDatalinkIRRange_m) and the MissileWarningDatalink toggle of its seeker kind on (DatalinkWarns).
     /// Rounds that cannot attack an aircraft (MunitionCatalog.CanAttackAircraft) are never warned.
-    /// The warning clears ReleaseSeconds after the last collision-course result.
+    /// The warning clears MissileWarningRelease_s after the last collision-course result.
     /// OwnSensor: the own RWR or MAWS sees the missile; otherwise the warning is shown as a datalink warning.
     /// The vanilla knownMissiles list and its events carry the result to the threat list, the alarm, the HUD, the map,
     /// the warning lights and the AI.
@@ -28,7 +28,6 @@ namespace CnoEvil.Core
     {
         public const float MawsRange = 5000.0f;
         private const float MawsLineOfSightMagnification = 1000.0f;
-        private const float ReleaseSeconds = 2.0f;
         private const float EvaluateInterval = 0.2f;
         private const float EnableInterval = 0.25f;
         // Largest distance term of the collision-course tolerance (m): a turn to the lead point, not a missile 3 km off
@@ -131,6 +130,7 @@ namespace CnoEvil.Core
             Vector3 ownVel = aircraft.rb != null ? aircraft.rb.velocity : Vector3.zero;
             bool mirror = CnoEvilNet.IsMirrorClient;
             float holdTime = Mathf.Max(0.0f, CnoEvilConfig.MissileWarningHold_s.Value);
+            float releaseTime = Mathf.Max(0.0f, CnoEvilConfig.MissileWarningRelease_s.Value);
             float ownSpeed = ownVel.magnitude;
             float datalinkTimeToGo = CnoEvilConfig.MissileWarningDatalinkTimeToGo_s.Value;
             float datalinkRange = CnoEvilConfig.MissileWarningDatalinkRange_m.Value;
@@ -211,7 +211,7 @@ namespace CnoEvil.Core
                 }
             }
 
-            // Release: no collision course (or no knowledge) for ReleaseSeconds, or the missile is gone
+            // Release: no collision course (or no knowledge) for releaseTime, or the missile is gone
             s_dropped.Clear();
             foreach (KeyValuePair<Missile, Warning> kv in state.Missiles)
             {
@@ -221,8 +221,8 @@ namespace CnoEvil.Core
                     s_dropped.Add(kv.Key);
                     continue;
                 }
-                if (now - w.LastOnCourse > ReleaseSeconds) w.Warned = false;
-                if (now - w.LastKnown > ReleaseSeconds && !w.Warned) s_dropped.Add(kv.Key);
+                if (now - w.LastOnCourse > releaseTime) w.Warned = false;
+                if (now - w.LastKnown > releaseTime && !w.Warned) s_dropped.Add(kv.Key);
             }
             for (int i = 0; i < s_dropped.Count; i++) state.Missiles.Remove(s_dropped[i]);
 
