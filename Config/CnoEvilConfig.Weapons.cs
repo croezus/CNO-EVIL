@@ -10,7 +10,6 @@ namespace CnoEvil.Config
         public static ConfigEntry<float> ARHSeekerActivationRange_m;
         public static ConfigEntry<float> ARMSeekerActivationRange_m;
         public static ConfigEntry<float> ARMSeekerMemoryAngleError_deg;
-        public static ConfigEntry<bool> ARMSeekerHoldDesignatedRadar;
         public static ConfigEntry<float> IRSeekerGimbal_deg;
         public static ConfigEntry<float> OpticalSeekerActivationRange_m;
         public static ConfigEntry<float> OpticalSearchRadius_m;
@@ -47,6 +46,7 @@ namespace CnoEvil.Config
         public static ConfigEntry<float> BasicDatalinkRelayInterval_s;
         public static ConfigEntry<float> MissilePictureCoast_s;
         public static ConfigEntry<float> MissileWarningHold_s;
+        public static ConfigEntry<float> MissileWarningRelease_s;
         public static ConfigEntry<float> MissileWarningDatalinkTimeToGo_s;
         public static ConfigEntry<float> MissileWarningDatalinkRange_m;
         public static ConfigEntry<float> MissileWarningDatalinkIRRange_m;
@@ -90,11 +90,6 @@ namespace CnoEvil.Config
                 "flies to the last seeker position plus the launch miss of its track (CEP from the launch Q), limited to the distance to the " +
                 "radar at the loss multiplied by the tangent of this angle. An early shutdown gives the full launch miss, a late shutdown a small miss. " +
                 "0 = vanilla: the missile flies to the last true radar position.");
-            ARMSeekerHoldDesignatedRadar = Bind(c, SectionGuidance, "ARMSeekerHoldDesignatedRadar", true,
-                "An anti-radiation missile launched at a radar homes only on that radar. When the radar stops, the missile flies to its " +
-                "datum (see ARMSeekerMemoryAngleError_deg) and does not select other emitters; when the same radar transmits again, the " +
-                "seeker locks it again. A missile launched without a target selects any emitter. " +
-                "FALSE = vanilla: after the loss the seeker selects any radar that illuminates it.");
             IRSeekerGimbal_deg = Bind(c, SectionGuidance, "IRSeekerGimbal_deg", 60.0f,
                 "Gimbal limit (deg from the missile axis) of an infrared seeker. A locked target (or flare) farther off the axis is lost, " +
                 "and the missile does not turn back to it. 0 = vanilla: no limit.");
@@ -170,9 +165,8 @@ namespace CnoEvil.Config
             AIRadarShutdownRange_m = Bind(c, SectionAI, "AIRadarShutdownRange_m", 15000.0f,
                 "Distance (m) between the radar and a known anti-radiation missile at which the AI stops transmission. A missile farther away " +
                 "does not stop the radar.");
-            AIRadarShutdownMissDistance_m = Bind(c, SectionAI, "AIRadarShutdownMissDistance_m", 500.0f,
-                "The AI stops transmission only when the closest approach of the known missile path to the radar is this distance (m) or less. " +
-                "Used for an anti-radiation missile in free search; a missile launched at one radar threatens only that radar.");
+            AIRadarShutdownMissDistance_m = Bind(c, SectionAI, "AIRadarShutdownMissDistance_m", 1000.0f,
+                "The AI stops transmission only when the closest approach of the known missile path to the radar is this distance (m) or less.");
             AIRadarShutdownMargin_s = Bind(c, SectionAI, "AIRadarShutdownMargin_s", 5.0f,
                 "Seconds after the estimated impact time of the missile before the radar transmits again.");
             AIRadarShutdownMaxOff_s = Bind(c, SectionAI, "AIRadarShutdownMaxOff_s", 45.0f,
@@ -181,8 +175,7 @@ namespace CnoEvil.Config
             AIRadarInterceptEnabled = Bind(c, SectionAI, "AIRadarInterceptEnabled", true,
                 "An AI ground or ship radar keeps transmission while the weapons that use this radar (its own and linked launchers " +
                 "and guns) can still shoot down the anti-radiation missile in time, or while an interceptor flies at it. The radar stops " +
-                "transmission only when the intercept is too late. In a salvo the missiles share the launchers and guns; nearby air defense " +
-                "of the same faction helps. AI aircraft stop at once. FALSE: the radar stops at once.");
+                "transmission only when the intercept is too late. AI aircraft stop at once. FALSE: the radar stops at once.");
             AIRadarInterceptReserveMobile_s = Bind(c, SectionAI, "AIRadarInterceptReserveMobile_s", 8.0f,
                 "A mobile radar vehicle keeps transmission only while the expected intercept is this many seconds (s) or more before " +
                 "the missile arrives. This time lets the vehicle pack up and drive away when the intercept fails.");
@@ -215,7 +208,9 @@ namespace CnoEvil.Config
             MissileWarningHold_s = Bind(c, SectionDatalink, "MissileWarningHold_s", 1.0f,
                 "Seconds a known hostile missile must stay on a collision course with an aircraft before its missile warning starts " +
                 "(alarm, threat list, AI evasion). An RWR contact on the missile seeker, or on the illuminator of a SARH missile that " +
-                "homes on the aircraft, starts the warning at once. The warning stops 2 s after the missile leaves the collision course.");
+                "homes on the aircraft, starts the warning at once. The warning stops MissileWarningRelease_s s after the missile leaves the collision course.");
+            MissileWarningRelease_s = Bind(c, SectionDatalink, "MissileWarningRelease_s", 1.0f,
+                "Seconds a known hostile missile must stay off a collision course with an aircraft before its missile warning stops.");
             MissileWarningDatalinkTimeToGo_s = Bind(c, SectionDatalink, "MissileWarningDatalinkTimeToGo_s", 20.0f,
                 "A missile without an own RWR or MAWS contact (known over the datalink or by the own radar) starts the missile warning only " +
                 "when its time to the closest approach is this or less (s). Also, the missile must have terrain line of sight to the " +
