@@ -24,7 +24,7 @@ namespace CnoEvil
     {
         public const string ModGuid = "com.cnoevil.nuclearoption.overhaul";
         public const string ModName = "CNO-EVIL";
-        public const string ModVersion = "1.1.5.2";
+        public const string ModVersion = "1.1.6";
 
         public static CnoEvilPlugin Instance { get; private set; }
         public static ManualLogSource Log { get; private set; }

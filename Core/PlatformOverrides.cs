@@ -26,10 +26,15 @@ namespace CnoEvil.Core
         // Add one line per unit, for example:
         // { "<jsonKey>", new PlatformOverride(RadarTemplate.Fighter5thGenAESA, 110000.0f, 3) },
         // The jsonKey of each unit is in the session log when DebugLogging is on ("Radar ...").
-        // No entries: the RWR tier comes from the aircraft rank (ADR-70), so the old tier entries of mod aircraft with
+        // No aircraft entries: the RWR tier comes from the aircraft rank (ADR-70), so the old tier entries of mod aircraft with
         // typeIdentity.radar = 0 (F-16M, F-22E, F-99, FS-41, MC-260, AH-31) are not necessary.
         private static readonly Dictionary<string, PlatformOverride> s_byJsonKey =
-            new Dictionary<string, PlatformOverride>(StringComparer.Ordinal);
+            new Dictionary<string, PlatformOverride>(StringComparer.Ordinal)
+        {
+            // Expansion 2082 Atrox Class Cruiser (183 m, VLS air defense): the definition gives shipType FFL, which
+            // selects the small-ship X band radar. Naval C band like the vanilla destroyer; vanilla range kept (ADR-87).
+            { "P_Cruiser1", new PlatformOverride(RadarTemplate.NavalCBand, 0.0f, 0) },
+        };
 
         public static bool TryGet(Unit unit, out PlatformOverride entry)
         {

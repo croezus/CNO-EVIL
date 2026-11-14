@@ -2,9 +2,11 @@
 
 In vanilla, everyone sees everything. With CNO-EVIL, your faction knows only what its sensors actually find.
 
-Version 1.1.5.2. BepInEx GUID: `com.cnoevil.nuclearoption.overhaul`.
+Version 1.1.6. BepInEx GUID: `com.cnoevil.nuclearoption.overhaul`.
 
 Full guide to every mechanic: [CNO-EVIL Pilot Manual (PDF)](Guide/CNO-EVIL-Pilot-Manual.pdf).
+
+AI Disclaimer: AI was used to create codebase used in this mod.
 
 ## Key features
 

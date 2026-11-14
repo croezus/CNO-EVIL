@@ -7,7 +7,7 @@ namespace CnoEvil.Core
 {
     /// <summary>
     /// Broadside RCS of ships (m², X band, median return near the beam aspect). The game gives every hull
-    /// radarSize 1.0, so there is no game value; the vanilla hulls use a real-world analog each, other hulls
+    /// radarSize 1.0, so there is no game value; the vanilla hulls (and mod hulls whose box is not a hull) use a real-world analog each, other hulls
     /// the empirical ship model sigma = 52 * sqrt(f_MHz) * D_kt^1.5 (Skolnik) with the displacement from the hull box.
     /// </summary>
     public static class ShipRcsDatabase
@@ -40,6 +40,9 @@ namespace CnoEvil.Core
             { "AssaultCarrier1", 1300000.0f },
             // Hyperion Class Carrier (267 m): Charles de Gaulle, 42 kt
             { "FleetCarrier1", 1400000.0f },
+            // Expansion 2082 Kairos Class Ekranoplan (178 m, 149 m span): the hull box counts the wings (~42 kt, 1.4 M m2).
+            // Analog: a 74 m ground-effect ship of 0.38 kt scaled to 178 m, ~5.3 kt, Skolnik ~60000 m2 (ADR-87)
+            { "P_Ekranoplan1", 60000.0f },
         };
 
         private static readonly HashSet<string> s_logged = new HashSet<string>(StringComparer.Ordinal);
