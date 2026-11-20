@@ -19,6 +19,7 @@ namespace CnoEvil.Components
         private const int RowCount = 3;
         private static readonly string[] Labels = { "Flares :", "Chaff :", "DRFM :" };
         private static readonly string[] RowNames = { "CnoEvil_FlareSelector", "CnoEvil_ChaffSelector", "CnoEvil_DecoySelector" };
+        private static readonly Func<LoadoutSelector, Aircraft> f_aircraft = FastReflection.CreateFieldGetter<LoadoutSelector, Aircraft>("aircraft");
 
         private readonly GameObject[] _rows = new GameObject[RowCount];
         private readonly Slider[] _sliders = new Slider[RowCount];
@@ -74,14 +75,22 @@ namespace CnoEvil.Components
                 if (_selector != null)
                 {
                     NuclearOption.SavedMission.Loadout loadout = _selector.GenerateLoadoutFromDropdowns();
-                    if (loadout != null && loadout.weapons != null)
+                    Aircraft aircraft = f_aircraft(_selector);
+                    WeaponManager weaponManager = aircraft != null ? aircraft.weaponManager : null;
+                    HardpointSet[] hardpointSets = weaponManager != null ? weaponManager.hardpointSets : null;
+                    if (loadout != null && loadout.weapons != null && hardpointSets != null && loadout.weapons.Count == hardpointSets.Length)
                     {
                         for (int i = 0; i < loadout.weapons.Count; i++)
                         {
+                            HardpointSet hardpointSet = hardpointSets[i];
+                            var hardpoints = hardpointSet != null ? hardpointSet.hardpoints : null;
+                            if (hardpoints == null)
+                                continue;
+                            int hardpointsCount = hardpoints.Count;
                             int flares, chaff;
                             CountermeasureLoadout.MountShare(loadout.weapons[i], out flares, out chaff);
-                            _podFlares += flares;
-                            _podChaff += chaff;
+                            _podFlares += flares * hardpointsCount;
+                            _podChaff += chaff * hardpointsCount;
                         }
                     }
                 }
